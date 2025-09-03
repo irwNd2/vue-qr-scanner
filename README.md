@@ -23,12 +23,12 @@ npm i vue-smart-qr-scanner
 // main.ts
 import { createApp } from 'vue'
 import App from './App.vue'
-import VueSmartQrScanner from 'vue-smart-qr-scanner'
-import 'vue-smart-qr-scanner/style.css'
+import VueQrScanner from 'vue-qr-scanner'
+import 'vue-qr-scanner/style.css'
 
 
 createApp(App)
-.use(VueSmartQrScanner)
+.use(VueQrScanner)
 .mount('#app')
 ```
 
@@ -54,11 +54,11 @@ import type { DetectedCode } from 'vue-qr-scanner'
 const canTorch = ref(true) // set after checking track capabilities if you want
 
 function onDetect(res: DetectedCode[]) {
-// usually you only care the first
-console.log(res[0]?.rawValue, res)
+    // usually you only care the first
+    console.log(res[0]?.rawValue, res)
 }
 function onError(err: Error) {
-console.error('QR error', err)
+    console.error('QR error', err)
 }
 </script>
 ```
