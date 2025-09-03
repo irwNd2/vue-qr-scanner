@@ -8,7 +8,7 @@
 ## Install
 
 ```bash
-npm i vue-smart-qr-scanner
+npm i vue-qr-scanner
 # peer: vue@^3
 ```
 
