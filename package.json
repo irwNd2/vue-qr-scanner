@@ -1,0 +1,40 @@
+{
+  "name": "vue-qr-scanner",
+  "version": "0.1.0",
+  "description": "Vue 3 QR/Barcode scanner with overlay + fallback pipeline (BarcodeDetector → ZXing WASM)",
+  "type": "module",
+  "main": "dist/vue-smart-qr-scanner.umd.cjs",
+  "module": "dist/vue-smart-qr-scanner.es.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/vue-smart-qr-scanner.es.js",
+      "require": "./dist/vue-smart-qr-scanner.umd.cjs"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "vue-tsc --noEmit && vite build",
+    "dev": "vite build --watch",
+    "typecheck": "vue-tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["vue", "qr", "qrcode", "barcode", "scanner", "wasm", "zxing"],
+  "author": "Your Name",
+  "license": "MIT",
+  "peerDependencies": {
+    "vue": ">=3.3.0"
+  },
+  "dependencies": {
+    "zxing-wasm": "^1.2.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0",
+    "vue": "^3.4.0",
+    "vue-tsc": "^2.0.20"
+  }
+}
