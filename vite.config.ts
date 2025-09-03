@@ -9,7 +9,7 @@ export default defineConfig({
     lib: {
       entry: path.resolve(__dirname, 'src/index.ts'),
       name: 'VueQrScanner',
-      fileName: (format) => `vue-smart-qr-scanner.${format}.js`
+      fileName: (format) => `vue-qr-scanner.${format}.js`
     },
     rollupOptions: {
       external: ['vue'],

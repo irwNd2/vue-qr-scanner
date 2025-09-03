@@ -9,7 +9,7 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, reactive, watchEffect } from 'vue'
 import type { DetectedCode, ScannerOptions, ScannerState } from './types'
-
+import { readBarcodes, type ReaderOptions } from 'zxing-wasm/reader'
 
 const props = withDefaults(defineProps<ScannerOptions>(), {
   formats: () => ['qr_code'],
@@ -17,35 +17,28 @@ const props = withDefaults(defineProps<ScannerOptions>(), {
   mirrorWhenUser: true
 })
 
-
 const emit = defineEmits<{ (e:'detect', payload:DetectedCode[]):void; (e:'error', err:Error):void }>()
-
 
 const video = ref<HTMLVideoElement | null>(null)
 const overlay = ref<HTMLCanvasElement | null>(null)
-
 
 const state = reactive<ScannerState>({ running: false, usingBack: true, torch: false })
 let stream: MediaStream | undefined
 let raf = 0
 let detector: any // BarcodeDetector or null
 let usingBarcodeAPI = false
-let wasmScanner: any // zxing-wasm instance
 let frameCount = 0
 
 async function initDetector() {
   // Try BarcodeDetector first
   // @ts-ignore
   if (globalThis.BarcodeDetector) {
-  // @ts-ignore
-  detector = new BarcodeDetector({ formats: props.formats })
-  usingBarcodeAPI = true
-  return
-}
+    // @ts-ignore
+    detector = new BarcodeDetector({ formats: props.formats })
+    usingBarcodeAPI = true
+    return
+  }
 // Fallback to zxing-wasm
-const { createScanner } = await import('zxing-wasm')
-  // Optional: pass locateFile if you host the .wasm in custom path
-  wasmScanner = await createScanner()
   usingBarcodeAPI = false
 }
 
@@ -125,30 +118,38 @@ async function readFrame(): Promise<DetectedCode[]> {
   frameCount = (frameCount + 1) % props.frameInterval
   if (frameCount !== 0) return []
 
-
   if (usingBarcodeAPI) {
     // Native BarcodeDetector uses <video> directly
-    const nativeResults: any[] = await detector.detect(video.value)
-      return nativeResults.map(r => ({
+    const nativeResults: any[] = await detector.detect(video.value!)
+    return nativeResults.map(r => ({
       rawValue: r.rawValue,
       format: r.format,
       corners: r.cornerPoints?.map((p: any) => ({ x: p.x, y: p.y }))
     }))
   }
-  // WASM path: capture ImageData then scan
+
+  // WASM path: capture ImageData then scan via readBarcodes()
+  if (!readBarcodes) return []
+
   const vid = video.value!, cvs = overlay.value!, ctx = cvs.getContext('2d')!
   cvs.width = vid.videoWidth
   cvs.height = vid.videoHeight
   ctx.drawImage(vid, 0, 0, cvs.width, cvs.height)
   const img = ctx.getImageData(0, 0, cvs.width, cvs.height)
-  const out = await wasmScanner.scanImageData(img)
-  return (
-    out?.barcodes?.map((b: any) => ({
-      rawValue: b.text,
-      format: b.format || 'qr_code',
-      corners: b.cornerPoints?.map((p: any) => ({ x: p.x, y: p.y }))
-    })) ?? []
-  )
+
+  // Opsi: sesuaikan opsi reader kalau perlu
+  const opts: ReaderOptions = {
+    tryHarder: true,
+    // formats: ['QRCode'], // biarkan kosong untuk multi-format, atau aktifkan ini untuk fokus QR
+    maxNumberOfSymbols: 4
+  }
+
+  const results = await readBarcodes(img, opts)
+  return results.map((b: any) => ({
+    rawValue: b.text,
+    format: b.format || 'qr_code',
+    corners: b.cornerPoints?.map((p: any) => ({ x: p.x, y: p.y }))
+  }))
 }
 
 async function toggleTorch() {
@@ -156,9 +157,10 @@ async function toggleTorch() {
   const caps: any = track?.getCapabilities?.()
   if (!track || !caps?.torch) return
   state.torch = !state.torch
-  await track.applyConstraints({ advanced: [{ torch: state.torch }] })
-}
 
+  type TorchConstraint = MediaTrackConstraints & { advanced?: Array<{ torch?: boolean }> }
+  await track.applyConstraints({ advanced: [{ torch: state.torch }] } as TorchConstraint)
+}
 
 async function switchCamera() {
   state.usingBack = !state.usingBack
