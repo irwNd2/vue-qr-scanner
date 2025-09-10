@@ -18,12 +18,67 @@
 
 ---
 
-## 📦 Install
+## Install
 
 ```bash
 npm install vue-qr-scanner
 # or
 yarn add vue-qr-scanner
+```
+
+# Usage
+
+### Basic Example
+```vue
+<template>
+    <QrScanner 
+        roi-shape="rect" 
+        :roi-aspect="2" 
+        :roi-size-ratio="0.7"
+        @detect="onDetect"
+        @engine-change="onEngineChange"
+    />
+</template>
+
+<script setup lang="ts">
+import QrScanner from 'vue-qr-scanner'
+
+function onDetect(codes) {
+  console.log('Detected:', codes[0]?.rawValue)
+}
+function onEngineChange(engine) {
+  console.log('Engine switched to:', engine)
+}
+</script>
+```
+
+atau
+```vue
+<template>
+  <QrScanner v-slot:controls="{ state, toggleTorch, switchCamera }"
+             :video-width="400"
+             :video-height="400"
+             :prefer-wasm="true"
+             @detect="onDetect">
+    <div class="controls">
+      <button @click="toggleTorch">
+        🔦 Torch: {{ state.torch ? 'ON' : 'OFF' }}
+      </button>
+      <button @click="switchCamera">
+        🔄 Switch to {{ state.usingBack ? 'Front' : 'Back' }} Camera
+      </button>
+    </div>
+  </QrScanner>
+</template>
+
+<script setup lang="ts">
+import QrScanner from 'vue-qr-scanner'
+
+function onDetect(codes) {
+  console.log('Detected code:', codes[0]?.rawValue)
+}
+</script>
+```
 
 ## Props
 Scanner Control
