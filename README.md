@@ -1,81 +1,72 @@
 # vue-qr-scanner
 
-**Vue 3 QR/Barcode Scanner** with an overlay bounding-box and smart fallback pipeline:
+📷 A modern **Vue 3 QR/Barcode scanner component** with an overlay ROI (Region of Interest), auto–fallback between **BarcodeDetector API → ZXing WASM**, and customizable UI.
 
-1. Use native **BarcodeDetector** when available (fast, low CPU)
-2. Fallback to **ZXing (WASM)** when not (broad support, multi-format)
+---
 
-## Install
+## ✨ Features
+
+- 🚀 **Vue 3 Component** — drop straight into your Vite/Nuxt projects.
+- 🖼️ **Overlay ROI** (Region of Interest) with dark mask outside the scan area.
+- 🔲 **Border styles**: full box or corner/bracket style (like native scanner apps).
+- 🔄 **Auto fallback** from [BarcodeDetector API](https://developer.mozilla.org/en-US/docs/Web/API/BarcodeDetector) to [ZXing WASM](https://github.com/zxing-js/wasm).
+- 💡 **Torch & Camera Switch** controls exposed via slot.
+- 📐 **Square / Rectangle ROI** with adjustable aspect ratio.
+- 🛡️ **ROI filtering** (only emit detections inside the ROI).
+- 🖥️ **Custom video size** (`videoWidth` & `videoHeight`).
+- ⚡ **Debug mode** for engine logs and detection streaks.
+
+---
+
+## 📦 Install
 
 ```bash
-npm i vue-qr-scanner
-# peer: vue@^3
-```
+npm install vue-qr-scanner
+# or
+yarn add vue-qr-scanner
 
-> If you use a custom path for the WASM file from `zxing-wasm`, configure it where you create the scanner (see comments in code).
+## Props
+Scanner Control
+| Prop             | Type       | Default       | Description                                                                           |
+| ---------------- | ---------- | ------------- | ------------------------------------------------------------------------------------- |
+| `formats`        | `string[]` | `['qr_code']` | List of formats for `BarcodeDetector`. ZXing WASM will attempt all supported formats. |
+| `frameInterval`  | `number`   | `1`           | Process every Nth frame (throttle).                                                   |
+| `mirrorWhenUser` | `boolean`  | `true`        | Mirror overlay when using the front-facing camera.                                    |
 
+ROI (Region of Interest)
+| Prop                   | Type                 | Default     | Description                                                   |
+| ---------------------- | -------------------- | ----------- | ------------------------------------------------------------- |
+| `roiShape`             | `'square' \| 'rect'` | `'square'`  | Shape of the ROI.                                             |
+| `roiAspect`            | `number`             | `1.6`       | Aspect ratio (width/height) when `roiShape="rect"`.           |
+| `roiSizeRatio`         | `number`             | `0.6`       | ROI size relative to the short side of the video (0–1).       |
+| `roiPadding`           | `number`             | `0`         | Extra padding inside the ROI (shrinks scan area).             |
+| `roiRadius`            | `number`             | `12`        | Corner radius of the ROI border.                              |
+| `roiBorderStyle`       | `'full' \| 'corner'` | `'corner'`  | Border style: full box or corner brackets.                    |
+| `roiBorderWidth`       | `number`             | `3`         | Border width for `'full'` style (or fallback for `'corner'`). |
+| `roiCornerLength`      | `number`             | `28`        | Corner bracket length for `'corner'` style.                   |
+| `roiCornerWidth`       | `number`             | `0`         | Corner bracket width (0 = use `roiBorderWidth`).              |
+| `roiBorderColorIdle`   | `string`             | `'#ffffff'` | Border color when idle.                                       |
+| `roiBorderColorActive` | `string`             | `'#22c55e'` | Border color when a code is detected.                         |
+| `roiInnerFillOpacity`  | `number`             | `0.12`      | Light fill inside ROI (0–1). Set `0` to disable.              |
+| `showMask`             | `boolean`            | `true`      | Show dark mask outside ROI.                                   |
+| `useRoi`               | `boolean`            | `true`      | Crop detection to ROI area.                                   |
+| `filterInsideRoi`      | `boolean`            | `false`     | Only emit detection if the code’s centroid lies inside ROI.   |
 
-## Usage
+Video
+| Prop          | Type               | Default  | Description                      |
+| ------------- | ------------------ | -------- | -------------------------------- |
+| `videoWidth`  | `number \| string` | `'100%'` | Video width (px or CSS string).  |
+| `videoHeight` | `number \| string` | `'auto'` | Video height (px or CSS string). |
 
+Engine & Debug
+| Prop              | Type      | Default | Description                                                                           |
+| ----------------- | --------- | ------- | ------------------------------------------------------------------------------------- |
+| `preferWasm`      | `boolean` | `false` | Force ZXing WASM instead of BarcodeDetector.                                          |
+| `bdTimeoutMs`     | `number`  | `2500`  | Auto–fallback to WASM if BarcodeDetector returns no results after N ms.               |
+| `bdMaxZeroFrames` | `number`  | `30`    | Auto–fallback to WASM if BarcodeDetector returns no results for N consecutive frames. |
+| `debug`           | `boolean` | `false` | Log engine info and detection counts to console.                                      |
 
-### Global plugin
-```ts
-// main.ts
-import { createApp } from 'vue'
-import App from './App.vue'
-import VueQrScanner from 'vue-qr-scanner'
-import 'vue-qr-scanner/style.css'
-
-
-createApp(App)
-.use(VueQrScanner)
-.mount('#app')
-```
-
-
-### In a component
-```vue
-<template>
-    <QrScanner :formats="['qr_code']" :frame-interval="2"
-    @detect="onDetect" @error="onError">
-        <template #controls="{ state, toggleTorch, switchCamera }">
-            <div class="controls">
-                <button @click="switchCamera">Switch ({{ state.usingBack ? 'Back' : 'Front' }})</button>
-                <button @click="toggleTorch" :disabled="!canTorch">Torch: {{ state.torch ? 'On' : 'Off' }}</button>
-            </div>
-        </template>
-    </QrScanner>
-</template>
-
-
-<script setup lang="ts">
-import { ref } from 'vue'
-import type { DetectedCode } from 'vue-qr-scanner'
-const canTorch = ref(true) // set after checking track capabilities if you want
-
-function onDetect(res: DetectedCode[]) {
-    // usually you only care the first
-    console.log(res[0]?.rawValue, res)
-}
-function onError(err: Error) {
-    console.error('QR error', err)
-}
-</script>
-```
-
-### Props
-- `formats: string[]` — forwarded to `BarcodeDetector`; default `['qr_code']`.
-- `frameInterval: number` — process every Nth frame (performance); default `1`.
-- `mirrorWhenUser: boolean` — mirror overlay when using front camera; default `true`.
-
-
-### Events
-- `@detect` — emits `DetectedCode[]` (each has `rawValue`, optional `format`, `corners`).
-- `@error` — camera/decoder errors.
-
-### Notes
-- Torch/zoom require device support (`getCapabilities()` / constraints). Not all browsers/devices allow it.
-- The overlay canvas auto-scales to the video size and draws boxes when codes are found.
 
 ## License
+
 MIT
