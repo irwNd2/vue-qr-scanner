@@ -52,7 +52,7 @@ function onEngineChange(engine) {
 </script>
 ```
 
-atau
+or
 ```vue
 <template>
   <QrScanner v-slot:controls="{ state, toggleTorch, switchCamera }"
