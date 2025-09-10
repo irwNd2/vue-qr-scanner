@@ -41,7 +41,7 @@ yarn add vue-qr-scanner
 </template>
 
 <script setup lang="ts">
-import QrScanner from 'vue-qr-scanner'
+import { QrScanner } from 'vue-qr-scanner'
 
 function onDetect(codes) {
   console.log('Detected:', codes[0]?.rawValue)
@@ -72,7 +72,7 @@ or
 </template>
 
 <script setup lang="ts">
-import QrScanner from 'vue-qr-scanner'
+import { QrScanner } from 'vue-qr-scanner'
 
 function onDetect(codes) {
   console.log('Detected code:', codes[0]?.rawValue)
