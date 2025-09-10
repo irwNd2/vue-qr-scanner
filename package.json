@@ -1,6 +1,6 @@
 {
   "name": "vue-qr-scanner",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Vue 3 QR/Barcode scanner with overlay + fallback pipeline (BarcodeDetector → ZXing WASM)",
   "type": "module",
   "main": "dist/vue-qr-scanner.umd.cjs",
