@@ -5,8 +5,8 @@
       playsinline
       autoplay
       class="vsqs-video"
-      :height="videoHeight"
       :width="videoWidth"
+      :height="videoHeight"
     ></video>
 
     <canvas
@@ -28,14 +28,10 @@ import { readBarcodes, type ReaderOptions } from 'zxing-wasm/reader'
 type TorchConstraint = MediaTrackConstraints & { advanced?: Array<{ torch?: boolean }> }
 type Pt = { x:number; y:number }
 type RoiShape = 'square' | 'rect'
+type RoiBorderStyle = 'full' | 'corner'
 
-type LocalProps = {
-  // bawaan
-  formats: string[]
-  frameInterval: number
-  mirrorWhenUser: boolean
-
-  // ROI tunggal
+/** Props lokal lengkap (superset dari ScannerOptions) */
+type LocalProps = ScannerOptions & {
   roiShape: RoiShape
   roiAspect: number
   roiSizeRatio: number
@@ -44,19 +40,27 @@ type LocalProps = {
   roiBorderColorIdle: string
   roiBorderColorActive: string
   roiBorderWidth: number
+  roiBorderStyle: RoiBorderStyle
+  roiCornerLength: number
+  roiCornerWidth: number
+  roiInnerFillOpacity: number
   showMask: boolean
   useRoi: boolean
   filterInsideRoi: boolean
 
-  // ukuran video
   videoWidth: number | string
   videoHeight: number | string
+
+  preferWasm: boolean
+  bdTimeoutMs: number
+  bdMaxZeroFrames: number
+  debug: boolean
 }
 
 export default defineComponent({
   name: 'QrScanner',
   props: {
-    // ==== bawaan scanner ====
+    // ===== props bawaan =====
     /** Daftar format untuk BarcodeDetector (abaikan di WASM). Default: ['qr_code'] */
     formats: { type: Array as () => string[], default: () => ['qr_code'] },
     /** Proses setiap N frame (throttle). Default: 1 (tiap frame) */
@@ -64,37 +68,55 @@ export default defineComponent({
     /** Mirror overlay ketika kamera depan. Default: true */
     mirrorWhenUser: { type: Boolean, default: true },
 
-    // ==== ROI tunggal (sekaligus border dan mask) ====
+    // ===== ROI tunggal (border + mask) =====
     /** Bentuk ROI/border: 'square' (persegi) atau 'rect' (persegi panjang) */
     roiShape: { type: String as PropType<RoiShape>, default: 'square' },
-    /** Untuk roiShape='rect': aspek width/height (mis. 1.7778 = 16:9, 2 = “panjang”) */
+    /** Untuk roiShape='rect': rasio width/height (contoh 1.7778=16:9, 2=panjang) */
     roiAspect: { type: Number, default: 1.6 },
     /** Ukuran ROI relatif sisi pendek video (0..1). Default: 0.6 */
     roiSizeRatio: { type: Number, default: 0.6 },
-    /** Padding (px) di dalam ROI (mengecilkan border/area scan). Default: 0 */
+    /** Padding (px) di dalam ROI (mengecilkan area border/scan). Default: 0 */
     roiPadding: { type: Number, default: 0 },
-    /** Radius sudut border ROI (px). Default: 12 */
+    /** Radius sudut ROI (px). Default: 12 */
     roiRadius: { type: Number, default: 12 },
-    /** Warna border ROI. Default: #ffffff (atau #22c55e saat aktif) */
+    /** Warna border idle */
     roiBorderColorIdle: { type: String, default: '#ffffff' },
-    /** Warna border saat ada deteksi. Default: #22c55e */
+    /** Warna border saat ada deteksi */
     roiBorderColorActive: { type: String, default: '#22c55e' },
-    /** Ketebalan border ROI (px). Default: 3 */
+    /** Ketebalan border (px) untuk style 'full' / default corner width */
     roiBorderWidth: { type: Number, default: 3 },
-    /** Tampilkan masker gelap di luar ROI. Default: true */
+    /** Gaya border: 'full' (garis utuh) atau 'corner' (bracket sudut) */
+    roiBorderStyle: { type: String as PropType<RoiBorderStyle>, default: 'corner' },
+    /** Panjang bracket tiap sudut (px) untuk style 'corner' */
+    roiCornerLength: { type: Number, default: 28 },
+    /** Ketebalan garis bracket (0=pakai roiBorderWidth) */
+    roiCornerWidth: { type: Number, default: 0 },
+    /** Opasitas fill tipis di dalam ROI (0..1), 0=tanpa fill */
+    roiInnerFillOpacity: { type: Number, default: 0.12 },
+    /** Tampilkan masker gelap di luar ROI */
     showMask: { type: Boolean, default: true },
-    /** Gunakan ROI sebagai area decode (crop). Default: true */
+    /** Gunakan ROI sebagai area decode (crop) */
     useRoi: { type: Boolean, default: true },
-    /** Hanya emit @detect jika centroid QR berada di dalam ROI. Default: false */
+    /** Hanya emit @detect jika centroid QR berada di dalam ROI */
     filterInsideRoi: { type: Boolean, default: false },
 
-    // ==== ukuran video ====
-    /** Lebar video: number (px) atau string ('100%', '500px'). Default: '100%' */
+    // ===== ukuran video =====
+    /** Lebar video: number (px) atau string ('100%', '500px') */
     videoWidth: { type: [String, Number], default: '100%' },
-    /** Tinggi video: number (px) atau string ('auto', '500px'). Default: 'auto' */
-    videoHeight: { type: [String, Number], default: 'auto' }
+    /** Tinggi video: number (px) atau string ('auto', '500px') */
+    videoHeight: { type: [String, Number], default: 'auto' },
+
+    // ===== engine control =====
+    /** Paksa ZXing WASM (abaikan BarcodeDetector) */
+    preferWasm: { type: Boolean, default: false },
+    /** Auto fallback ke WASM jika BD kosong terlalu lama (ms). 0=nonaktif */
+    bdTimeoutMs: { type: Number, default: 2500 },
+    /** Auto fallback ke WASM jika BD kosong N frame berturut-turut. 0=nonaktif */
+    bdMaxZeroFrames: { type: Number, default: 30 },
+    /** Log ringan ke console */
+    debug: { type: Boolean, default: false }
   },
-  emits: ['detect', 'error'],
+  emits: ['detect', 'error', 'engine-change'],
   setup(props: LocalProps, { emit }) {
     const video = ref<HTMLVideoElement | null>(null)
     const overlay = ref<HTMLCanvasElement | null>(null)
@@ -106,9 +128,12 @@ export default defineComponent({
     let usingBarcodeAPI = false
     let frameCount = 0
     let smoothCorners: Pt[] | null = null
+    let zeroFrameStreak = 0
+    let bdStartTs = 0
+
     const SMOOTH_ALPHA = 0.35
 
-    // ===== util =====
+    // ===== utils =====
     function emaCorners(prev: Pt[] | null, next: Pt[]): Pt[] {
       if (!prev || prev.length !== next.length) return next.map(p => ({ x: p.x, y: p.y }))
       return next.map((p, i) => ({
@@ -119,52 +144,174 @@ export default defineComponent({
     function centroid(pts: Pt[]): Pt {
       return { x: pts.reduce((s,p)=>s+p.x,0)/pts.length, y: pts.reduce((s,p)=>s+p.y,0)/pts.length }
     }
-
-    /** Hitung rect ROI (x,y,w,h) berdasarkan props + ukuran video */
+    /** Hitung rect ROI (x,y,w,h) di koordinat piksel video */
     function roiRect(cvs: HTMLCanvasElement) {
       const shortSide = Math.min(cvs.width, cvs.height)
       const base = Math.max(0, Math.floor(shortSide * props.roiSizeRatio)) // sisi persegi dasar
       let w = base, h = base
-
       if (props.roiShape === 'rect') {
         const aspect = Math.max(0.01, props.roiAspect) // w/h
-        if (aspect >= 1) {
-          // lebar lebih besar → tinggi mengecil
-          w = base
-          h = Math.floor(base / aspect)
-        } else {
-          // tinggi lebih besar → lebar mengecil
-          w = Math.floor(base * aspect)
-          h = base
-        }
+        if (aspect >= 1) { w = base; h = Math.floor(base / aspect) }
+        else { w = Math.floor(base * aspect); h = base }
       }
-      // center-kan
       let x = Math.floor((cvs.width  - w) / 2)
       let y = Math.floor((cvs.height - h) / 2)
-
-      // padding ke dalam
       const pad = Math.max(0, props.roiPadding)
       x += pad; y += pad; w = Math.max(0, w - 2 * pad); h = Math.max(0, h - 2 * pad)
       return { x, y, w, h }
     }
-    // ===== init / camera =====
-    async function initDetector() {
-      // @ts-ignore
-      if (globalThis.BarcodeDetector) {
-        // @ts-ignore
-        detector = new BarcodeDetector({ formats: (props as any).formats })
-        usingBarcodeAPI = true
-        return
-      }
-      usingBarcodeAPI = false // fallback: WASM readBarcodes
+    /** Rounded-rect path helper */
+    function roundRect(ctx:CanvasRenderingContext2D, rx:number, ry:number, rw:number, rh:number, r:number) {
+      const rr = Math.min(Math.max(0, r), rw/2, rh/2)
+      ctx.beginPath()
+      ctx.moveTo(rx+rr, ry)
+      ctx.arcTo(rx+rw, ry,   rx+rw, ry+rh, rr)
+      ctx.arcTo(rx+rw, ry+rh, rx,   ry+rh, rr)
+      ctx.arcTo(rx,    ry+rh, rx,   ry,    rr)
+      ctx.arcTo(rx,    ry,    rx+rw,ry,    rr)
+      ctx.closePath()
     }
 
+    /** Corner/bracket border yang “masuk” ke radius (no gap) */
+    function drawCornerBorder(
+      ctx: CanvasRenderingContext2D,
+      x: number, y: number, w: number, h: number,
+      r: number,
+      color: string,
+      width: number,
+      len: number
+    ) {
+      ctx.save()
+      ctx.strokeStyle = color
+      ctx.lineWidth = width
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      
+      const L = Math.max(2, Math.min(len, Math.floor(Math.min(w, h) / 2)))
+      const rr = Math.max(0, Math.min(r, w/2, h/2))
+      
+      // Helper clamp function
+      const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+      
+      // Top-Left Corner
+      ctx.beginPath()
+      if (rr > 0) {
+        // Horizontal line (mengikuti curve)
+        ctx.arc(x + rr, y + rr, rr, Math.PI, Math.PI * 1.5, false)
+        ctx.moveTo(x + rr, y)
+        ctx.lineTo(clamp(x + rr + L, x, x + w), y)
+        
+        // Vertical line (mengikuti curve)
+        ctx.moveTo(x, y + rr)
+        ctx.lineTo(x, clamp(y + rr + L, y, y + h))
+      } else {
+        // No radius, draw straight lines
+        ctx.moveTo(x, y)
+        ctx.lineTo(clamp(x + L, x, x + w), y)
+        ctx.moveTo(x, y)
+        ctx.lineTo(x, clamp(y + L, y, y + h))
+      }
+      ctx.stroke()
+      
+      // Top-Right Corner
+      ctx.beginPath()
+      if (rr > 0) {
+        // Horizontal line (mengikuti curve)
+        ctx.moveTo(clamp(x + w - rr - L, x, x + w), y)
+        ctx.lineTo(x + w - rr, y)
+        ctx.arc(x + w - rr, y + rr, rr, Math.PI * 1.5, 0, false)
+        
+        // Vertical line (mengikuti curve)
+        ctx.moveTo(x + w, y + rr)
+        ctx.lineTo(x + w, clamp(y + rr + L, y, y + h))
+      } else {
+        ctx.moveTo(clamp(x + w - L, x, x + w), y)
+        ctx.lineTo(x + w, y)
+        ctx.moveTo(x + w, y)
+        ctx.lineTo(x + w, clamp(y + L, y, y + h))
+      }
+      ctx.stroke()
+      
+      // Bottom-Right Corner
+      ctx.beginPath()
+      if (rr > 0) {
+        // Horizontal line (mengikuti curve)
+        ctx.moveTo(clamp(x + w - rr - L, x, x + w), y + h)
+        ctx.lineTo(x + w - rr, y + h)
+        ctx.arc(x + w - rr, y + h - rr, rr, 0, Math.PI * 0.5, false)
+        
+        // Vertical line (mengikuti curve)
+        ctx.moveTo(x + w, clamp(y + h - rr - L, y, y + h))
+        ctx.lineTo(x + w, y + h - rr)
+      } else {
+        ctx.moveTo(clamp(x + w - L, x, x + w), y + h)
+        ctx.lineTo(x + w, y + h)
+        ctx.moveTo(x + w, clamp(y + h - L, y, y + h))
+        ctx.lineTo(x + w, y + h)
+      }
+      ctx.stroke()
+      
+      // Bottom-Left Corner
+      ctx.beginPath()
+      if (rr > 0) {
+        // Horizontal line (mengikuti curve)
+        ctx.moveTo(x + rr, y + h)
+        ctx.lineTo(clamp(x + rr + L, x, x + w), y + h)
+        ctx.arc(x + rr, y + h - rr, rr, Math.PI * 0.5, Math.PI, false)
+        
+        // Vertical line (mengikuti curve)
+        ctx.moveTo(x, clamp(y + h - rr - L, y, y + h))
+        ctx.lineTo(x, y + h - rr)
+      } else {
+        ctx.moveTo(x, y + h)
+        ctx.lineTo(clamp(x + L, x, x + w), y + h)
+        ctx.moveTo(x, clamp(y + h - L, y, y + h))
+        ctx.lineTo(x, y + h)
+      }
+      ctx.stroke()
+      
+      ctx.restore()
+    }
+
+    // ===== engine init =====
+    async function initDetector() {
+      usingBarcodeAPI = false
+      zeroFrameStreak = 0
+      bdStartTs = 0
+      detector = null
+
+      if (!props.preferWasm) {
+        try {
+          // @ts-ignore
+          if (globalThis.BarcodeDetector) {
+            // @ts-ignore
+            detector = new BarcodeDetector({ formats: props.formats })
+            usingBarcodeAPI = true
+            bdStartTs = performance.now()
+            props.debug && console.log('[engine] BarcodeDetector')
+            emit('engine-change', 'barcode-detector')
+            return
+          }
+        } catch (e) {
+          props.debug && console.warn('[engine] BD init failed → WASM', e)
+        }
+      }
+      usingBarcodeAPI = false
+      detector = null
+      props.debug && console.log('[engine] WASM')
+      emit('engine-change', 'wasm')
+    }
+
+    // ===== camera =====
     async function start() {
       state.running = true
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: state.usingBack ? 'environment' : 'user' },
-        audio: false
-      })
+      const videoConstraints: MediaTrackConstraints = {
+        facingMode: state.usingBack ? 'environment' : 'user',
+        // width:  { ideal: 1280 },
+        // height: { ideal: 720 },
+        // advanced: [{ focusMode: 'continuous' as any }]
+      }
+      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false })
       if (!video.value) return
       video.value.srcObject = stream
       await video.value.play()
@@ -188,40 +335,43 @@ export default defineComponent({
       const { x, y, w, h } = roiRect(cvs)
       const active = !!(results[0]?.corners?.length)
 
-      const roundRect = (rx:number, ry:number, rw:number, rh:number, r:number) => {
-        const rr = Math.min(r, rw/2, rh/2)
-        ctx.beginPath()
-        ctx.moveTo(rx+rr, ry)
-        ctx.arcTo(rx+rw, ry,   rx+rw, ry+rh, rr)
-        ctx.arcTo(rx+rw, ry+rh, rx,   ry+rh, rr)
-        ctx.arcTo(rx,    ry+rh, rx,   ry,    rr)
-        ctx.arcTo(rx,    ry,    rx+rw,ry,    rr)
-        ctx.closePath()
-      }
-
       // Mask di luar ROI
       if (props.showMask) {
         ctx.save()
         ctx.fillStyle = 'rgba(0,0,0,0.35)'
         ctx.fillRect(0, 0, cvs.width, cvs.height)
         ctx.globalCompositeOperation = 'destination-out'
-        roundRect(x, y, w, h, props.roiRadius)
+        roundRect(ctx, x, y, w, h, props.roiRadius)
         ctx.fill()
         ctx.restore()
       }
+      // Fill tipis di dalam ROI (opsional)
+      if (props.roiInnerFillOpacity > 0) {
+        ctx.save()
+        roundRect(ctx, x, y, w, h, props.roiRadius)
+        ctx.clip()
+        ctx.fillStyle = `rgba(255,255,255,${Math.max(0, Math.min(1, props.roiInnerFillOpacity))})`
+        ctx.fillRect(x, y, w, h)
+        ctx.restore()
+      }
 
-      // Border ROI (satu-satunya border)
-      ctx.lineWidth = props.roiBorderWidth
-      ctx.strokeStyle = active ? props.roiBorderColorActive : props.roiBorderColorIdle
-      roundRect(x, y, w, h, props.roiRadius)
-      ctx.stroke()
+      // Border ROI (full/corner)
+      const color = active ? props.roiBorderColorActive : props.roiBorderColorIdle
+      if (props.roiBorderStyle === 'corner') {
+        const lw = props.roiCornerWidth > 0 ? props.roiCornerWidth : props.roiBorderWidth
+        drawCornerBorder(ctx, x, y, w, h, props.roiRadius, color, lw, props.roiCornerLength)
+      } else {
+        ctx.lineWidth = props.roiBorderWidth
+        ctx.strokeStyle = color
+        roundRect(ctx, x, y, w, h, props.roiRadius)
+        ctx.stroke()
+      }
 
       // Bounding box deteksi (smoothed)
       if (active) {
-        const shouldMirror = (props as any).mirrorWhenUser && !state.usingBack
+        const shouldMirror = props.mirrorWhenUser && !state.usingBack
         const corners = results[0]!.corners!
         smoothCorners = emaCorners(smoothCorners, corners)
-
         ctx.save()
         if (shouldMirror) { ctx.scale(-1, 1); ctx.translate(-cvs.width, 0) }
         ctx.lineWidth = 3
@@ -237,18 +387,50 @@ export default defineComponent({
 
     // ===== decoding =====
     async function readFrame(): Promise<DetectedCode[]> {
-      frameCount = (frameCount + 1) % ((props as any).frameInterval ?? 1)
+      // throttle
+      frameCount = (frameCount + 1) % (props.frameInterval ?? 1)
       if (frameCount !== 0) return []
 
-      if (usingBarcodeAPI) {
-        const nativeResults: any[] = await detector.detect(video.value!)
-        return nativeResults.map(r => ({
-          rawValue: r.rawValue,
-          format: r.format,
-          corners: r.cornerPoints?.map((p: any) => ({ x: p.x, y: p.y }))
-        }))
+      // helper fallback rules
+      const maybeFallbackToWasm = () => {
+        if (!usingBarcodeAPI) return false
+        const byTime = props.bdTimeoutMs > 0 && performance.now() - bdStartTs >= props.bdTimeoutMs
+        const byStreak = props.bdMaxZeroFrames > 0 && zeroFrameStreak >= props.bdMaxZeroFrames
+        if (byTime || byStreak) {
+          usingBarcodeAPI = false
+          detector = null
+          props.debug && console.warn('[engine] fallback → WASM (time:', byTime, 'streak:', zeroFrameStreak, ')')
+          emit('engine-change', 'wasm')
+          return true
+        }
+        return false
       }
 
+      // BarcodeDetector path
+      if (usingBarcodeAPI) {
+        try {
+          const nativeResults: any[] = await detector.detect(video.value!)
+          zeroFrameStreak = nativeResults.length ? 0 : (zeroFrameStreak + 1)
+          props.debug && console.log('[BD] results=', nativeResults.length, 'streak=', zeroFrameStreak)
+          if (!nativeResults.length && maybeFallbackToWasm()) {
+            // jatuh ke WASM di frame yg sama (lanjut di bawah)
+          } else {
+            return nativeResults.map(r => ({
+              rawValue: r.rawValue,
+              format: r.format,
+              corners: r.cornerPoints?.map((p: any) => ({ x: p.x, y: p.y }))
+            }))
+          }
+        } catch (e) {
+          props.debug && console.warn('[BD] detect error → WASM', e)
+          usingBarcodeAPI = false
+          detector = null
+          emit('engine-change', 'wasm')
+          // lanjut ke WASM
+        }
+      }
+
+      // WASM path
       const vid = video.value!, cvs = overlay.value!, ctx = cvs.getContext('2d')!
       cvs.width = vid.videoWidth
       cvs.height = vid.videoHeight
@@ -263,7 +445,7 @@ export default defineComponent({
       const img = ctx.getImageData(sx, sy, sw, sh)
       const opts: ReaderOptions = { tryHarder: true, maxNumberOfSymbols: 4 }
       const results = await readBarcodes(img, opts)
-
+      props.debug && console.log('[WASM] results=', results.length)
       return results.map((b: any) => ({
         rawValue: b.text,
         format: b.format || 'qr_code',
@@ -331,7 +513,7 @@ export default defineComponent({
 
 <style scoped>
 .vsqs-wrapper { position: relative; width: 100%; height: auto; display: block; }
-.vsqs-video { width: 100%; height: auto; display: block; position: relative; z-index: 0; object-fit: cover; }
+.vsqs-video   { width: 100%; height: auto; display: block; position: relative; z-index: 0; object-fit: cover; }
 .vsqs-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; display: block; }
 </style>
 
