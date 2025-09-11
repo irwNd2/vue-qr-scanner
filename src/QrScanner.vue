@@ -24,6 +24,7 @@
 import { defineComponent, ref, reactive, onMounted, watch, onBeforeUnmount, watchEffect, PropType } from 'vue'
 import type { DetectedCode, ScannerOptions, ScannerState } from './types'
 import { readBarcodes, type ReaderOptions } from 'zxing-wasm/reader'
+import { prepareZXingModule } from 'zxing-wasm'
 
 type TorchConstraint = MediaTrackConstraints & { advanced?: Array<{ torch?: boolean }> }
 type Pt = { x:number; y:number }
@@ -60,6 +61,8 @@ type LocalProps = ScannerOptions & {
   releaseOnPause: boolean
   detectEnabled: boolean
   scanOnce: boolean
+
+  wasmUrl: string
 }
 
 export default defineComponent({
@@ -130,6 +133,9 @@ export default defineComponent({
     detectEnabled: { type: Boolean, default: true },
     /** Stop scanning after first successful detection */
     scanOnce: { type: Boolean, default: false },
+
+    /** Override .wasm file URL. If empty, uses zxing-wasm default. */
+    wasmUrl: { type: String, default: '' },
   },
   emits: ['detect', 'error', 'engine-change'],
   setup(props: LocalProps, { emit }) {
@@ -338,6 +344,17 @@ export default defineComponent({
           props.debug && console.warn('[engine] BD init failed → WASM', e)
         }
       }
+
+      // ONLY when user overrides wasmUrl
+      if (props.wasmUrl) {
+        await prepareZXingModule({
+          overrides: {
+            locateFile: () => props.wasmUrl
+          },
+          fireImmediately: true
+        })
+      }
+
       usingBarcodeAPI = false
       detector = null
       props.debug && console.log('[engine] WASM')
