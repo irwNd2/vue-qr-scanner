@@ -319,6 +319,14 @@ export default defineComponent({
       loop()
     }
 
+    function applyWasmOverride() {
+      if (props.wasmUrl) {
+        setZXingModuleOverrides({
+          locateFile: () => props.wasmUrl
+        })
+        props.debug && console.log('[ZXING OVERRIDE] wasmUrl =', props.wasmUrl)
+      }
+    }
 
     // ===== engine init =====
     async function initDetector() {
@@ -345,11 +353,7 @@ export default defineComponent({
       }
 
       // ONLY when user overrides wasmUrl
-      if (props.wasmUrl) {
-        setZXingModuleOverrides({
-          locateFile: (_path: any, _prefix: any) => props.wasmUrl
-        })
-      }
+      applyWasmOverride()
 
       usingBarcodeAPI = false
       detector = null
