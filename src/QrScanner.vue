@@ -21,7 +21,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, reactive, onMounted, onBeforeUnmount, watchEffect, PropType } from 'vue'
+import { defineComponent, ref, reactive, onMounted, watch, onBeforeUnmount, watchEffect, PropType } from 'vue'
 import type { DetectedCode, ScannerOptions, ScannerState } from './types'
 import { readBarcodes, type ReaderOptions } from 'zxing-wasm/reader'
 
@@ -55,6 +55,11 @@ type LocalProps = ScannerOptions & {
   bdTimeoutMs: number
   bdMaxZeroFrames: number
   debug: boolean
+
+  paused: boolean
+  releaseOnPause: boolean
+  detectEnabled: boolean
+  scanOnce: boolean
 }
 
 export default defineComponent({
@@ -114,7 +119,17 @@ export default defineComponent({
     /** Auto fallback ke WASM jika BD kosong N frame berturut-turut. 0=nonaktif */
     bdMaxZeroFrames: { type: Number, default: 30 },
     /** Log ringan ke console */
-    debug: { type: Boolean, default: false }
+    debug: { type: Boolean, default: false },
+
+    // ===== playback & detection control =====
+    /** Pause camera preview & scanning from outside */
+    paused: { type: Boolean, default: false },
+    /** When pausing, also stop camera tracks (saves battery/permission). Will reacquire on resume */
+    releaseOnPause: { type: Boolean, default: false },
+    /** If false, do not emit @detect (overlay still updates) */
+    detectEnabled: { type: Boolean, default: true },
+    /** Stop scanning after first successful detection */
+    scanOnce: { type: Boolean, default: false },
   },
   emits: ['detect', 'error', 'engine-change'],
   setup(props: LocalProps, { emit }) {
@@ -272,6 +287,33 @@ export default defineComponent({
       
       ctx.restore()
     }
+
+    async function pauseInternal() {
+      cancelAnimationFrame(raf)
+      if (video.value && !video.value.paused) {
+        try { await video.value.pause() } catch {}
+      }
+      if (props.releaseOnPause) {
+        stream?.getTracks().forEach(t => t.stop())
+        stream = undefined
+      }
+      state.running = false
+    }
+
+    async function resumeInternal() {
+      if (props.releaseOnPause || !stream) {
+        await initDetector()
+        await start()
+        return
+      }
+      // stream masih ada: lanjutkan
+      if (video.value?.paused) {
+        try { await video.value.play() } catch {}
+      }
+      state.running = true
+      loop()
+    }
+
 
     // ===== engine init =====
     async function initDetector() {
@@ -465,7 +507,19 @@ export default defineComponent({
           results = inside ? results : []
         }
 
-        if (results.length) emit('detect', results)
+        // emit detect kalau diizinkan
+        if (results.length) {
+          if (props.detectEnabled) emit('detect', results)
+
+          if (props.scanOnce) {
+            // hentikan scanning; kalau mau juga hentikan preview, set releaseOnPause sesuai kebutuhan
+            await pauseInternal()
+            // (opsional) bisa emit event khusus kalau mau, mis. emit('stopped-after-detect')
+            drawOverlay(results) // gambar terakhir
+            return // stop loop
+          }
+        }
+
         drawOverlay(results)
       } catch (e: any) {
         emit('error', e)
@@ -495,6 +549,10 @@ export default defineComponent({
     })
     onBeforeUnmount(() => stop())
 
+    watch(() => props.paused, async (isPaused) => {
+      if (isPaused) await pauseInternal()
+      else await resumeInternal()
+    })
     // sync canvas size ke video frame
     watchEffect(() => {
       const vid = video.value, cvs = overlay.value
@@ -505,6 +563,11 @@ export default defineComponent({
       })
       ro.observe(vid)
     })
+
+    // bisa ekspose fungsi ini nanti (nanti ajaa)
+    function pause()  { return pauseInternal() }
+    function resume() { return resumeInternal() }
+    function togglePause() { return props.paused ? resumeInternal() : pauseInternal() }
 
     return { video, overlay, state, toggleTorch, switchCamera }
   }
