@@ -59,6 +59,7 @@ or
              :video-width="400"
              :video-height="400"
              :prefer-wasm="true"
+             :wasm-url="wasmUrl"
              @detect="onDetect">
     <div class="controls">
       <button @click="toggleTorch">
@@ -72,6 +73,7 @@ or
 </template>
 
 <script setup lang="ts">
+import wasmUrl from '@/assets/modules/zxing_reader.wasm?url'
 import { QrScanner } from 'vue-qr-scanner'
 
 function onDetect(codes) {
