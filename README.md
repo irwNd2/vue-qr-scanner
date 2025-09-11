@@ -88,6 +88,7 @@ Scanner Control
 | `frameInterval`  | `number`   | `1`           | Process every Nth frame (throttle).                                                   |
 | `mirrorWhenUser` | `boolean`  | `true`        | Mirror overlay when using the front-facing camera.                                    |
 
+
 ROI (Region of Interest)
 | Prop                   | Type                 | Default     | Description                                                   |
 | ---------------------- | -------------------- | ----------- | ------------------------------------------------------------- |
@@ -107,11 +108,21 @@ ROI (Region of Interest)
 | `useRoi`               | `boolean`            | `true`      | Crop detection to ROI area.                                   |
 | `filterInsideRoi`      | `boolean`            | `false`     | Only emit detection if the code’s centroid lies inside ROI.   |
 
+
 Video
 | Prop          | Type               | Default  | Description                      |
 | ------------- | ------------------ | -------- | -------------------------------- |
 | `videoWidth`  | `number \| string` | `'100%'` | Video width (px or CSS string).  |
 | `videoHeight` | `number \| string` | `'auto'` | Video height (px or CSS string). |
+
+
+Playback & Detection Control
+| Prop              | Type      | Default | Description                                                                           |
+| ----------------- | --------- | ------- | ------------------------------------------------------------------------------------- |
+| `paused`      | `boolean` | `false` | Pause camera preview & scanning from outside.                                          |
+| `releaseOnPause`     | `boolean`  | `false`  | When pausing, also stop camera tracks (saves battery/permission). Will reacquire on resume.               |
+| `detectEnabled` | `boolean`  | `true`    | If false, do not emit `@detect` (overlay still updates). |
+| `scanOnce`           | `boolean` | `false` | Stop scanning after first successful detection.                                      |
 
 Engine & Debug
 | Prop              | Type      | Default | Description                                                                           |
@@ -120,6 +131,11 @@ Engine & Debug
 | `bdTimeoutMs`     | `number`  | `2500`  | Auto–fallback to WASM if BarcodeDetector returns no results after N ms.               |
 | `bdMaxZeroFrames` | `number`  | `30`    | Auto–fallback to WASM if BarcodeDetector returns no results for N consecutive frames. |
 | `debug`           | `boolean` | `false` | Log engine info and detection counts to console.                                      |
+
+WASM File
+| Prop              | Type      | Default | Description                                                                           |
+| ----------------- | --------- | ------- | ------------------------------------------------------------------------------------- |
+| `wasmUrl`      | `string` | `''` | Override .wasm file URL. If empty, uses zxing-wasm default..                                          |
 
 
 ## License
