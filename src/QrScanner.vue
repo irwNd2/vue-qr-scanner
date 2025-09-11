@@ -23,8 +23,7 @@
 <script lang="ts">
 import { defineComponent, ref, reactive, onMounted, watch, onBeforeUnmount, watchEffect, PropType } from 'vue'
 import type { DetectedCode, ScannerOptions, ScannerState } from './types'
-import { readBarcodes, type ReaderOptions } from 'zxing-wasm/reader'
-import { prepareZXingModule } from 'zxing-wasm'
+import { readBarcodes, type ReaderOptions, setZXingModuleOverrides } from 'zxing-wasm/reader'
 
 type TorchConstraint = MediaTrackConstraints & { advanced?: Array<{ torch?: boolean }> }
 type Pt = { x:number; y:number }
@@ -347,11 +346,8 @@ export default defineComponent({
 
       // ONLY when user overrides wasmUrl
       if (props.wasmUrl) {
-        await prepareZXingModule({
-          overrides: {
-            locateFile: () => props.wasmUrl
-          },
-          fireImmediately: true
+        setZXingModuleOverrides({
+          locateFile: (_path: any, _prefix: any) => props.wasmUrl
         })
       }
 
