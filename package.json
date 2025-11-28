@@ -1,6 +1,6 @@
 {
   "name": "vue-qr-scanner",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Vue 3 QR/Barcode scanner with overlay + fallback pipeline (BarcodeDetector → ZXing WASM)",
   "repository": {
     "type": "git",
