@@ -62,6 +62,10 @@ type LocalProps = ScannerOptions & {
   scanOnce: boolean
 
   wasmUrl: string
+
+  freezeTimeoutMs: number
+  autoRestartOnFreeze: boolean
+  maxFreezeRestart: number
 }
 
 export default defineComponent({
@@ -123,6 +127,11 @@ export default defineComponent({
     /** Log ringan ke console */
     debug: { type: Boolean, default: false },
 
+    //freeze detection
+    freezeTimeoutMs: { type: Number, default: 4000 },
+    autoRestartOnFreeze: { type: Boolean, default: true },
+    maxFreezeRestart: { type: Number, default: 2 },
+
     // ===== playback & detection control =====
     /** Pause camera preview & scanning from outside */
     paused: { type: Boolean, default: false },
@@ -150,6 +159,12 @@ export default defineComponent({
     let smoothCorners: Pt[] | null = null
     let zeroFrameStreak = 0
     let bdStartTs = 0
+
+    // ===== freeze watchdog =====
+    let freezeTimer: number | undefined
+    let lastLoopTs = 0
+    let lastVideoTime = 0
+    let freezeRestartCount = 0
 
     const SMOOTH_ALPHA = 0.35
 
@@ -295,6 +310,7 @@ export default defineComponent({
 
     async function pauseInternal() {
       cancelAnimationFrame(raf)
+      clearFreezeWatchdog()
       if (video.value && !video.value.paused) {
         try { await video.value.pause() } catch {}
       }
@@ -374,10 +390,12 @@ export default defineComponent({
       if (!video.value) return
       video.value.srcObject = stream
       await video.value.play()
+      startFreezeWatchdog()
       loop()
     }
     function stop() {
       cancelAnimationFrame(raf)
+      clearFreezeWatchdog()
       stream?.getTracks().forEach(t => t.stop())
       state.running = false
     }
@@ -512,8 +530,84 @@ export default defineComponent({
       }))
     }
 
+    function clearFreezeWatchdog() {
+      if (freezeTimer != null) {
+        clearInterval(freezeTimer)
+        freezeTimer = undefined
+      }
+    }
+
+    function startFreezeWatchdog() {
+      clearFreezeWatchdog()
+      freezeRestartCount = 0
+      lastLoopTs = performance.now()
+      lastVideoTime = video.value?.currentTime ?? 0
+
+      const timeout = props.freezeTimeoutMs || 8000
+
+      freezeTimer = window.setInterval(() => {
+        if (!state.running || !video.value) return
+
+        const now = performance.now()
+        const dt = now - lastLoopTs
+        const vTime = video.value.currentTime
+
+        const noLoopProgress = dt > timeout
+        const noVideoProgress = (vTime === lastVideoTime) && dt > timeout
+
+        if (noLoopProgress || noVideoProgress) {
+          // tandai freeze
+          emit('error', {
+            type: 'CAMERA_FREEZE',
+            message: 'Scanner berhenti merespons, mencoba ulang kamera.',
+            detail: { noLoopProgress, noVideoProgress }
+          })
+
+          // update videoTime untuk next check
+          lastVideoTime = vTime
+          lastLoopTs = now
+
+          if (!props.autoRestartOnFreeze) return
+
+          if (freezeRestartCount >= (props.maxFreezeRestart ?? 2)) {
+            // sudah terlalu sering, biarkan host app yang handle
+            emit('error', {
+              type: 'CAMERA_FREEZE_FATAL',
+              message: 'Scanner sering freeze. Silakan refresh atau buka ulang halaman.',
+            })
+            clearFreezeWatchdog()
+            return
+          }
+
+          freezeRestartCount++
+
+          // restart kamera + detector
+          ;(async () => {
+            try {
+              props.debug && console.warn('[freeze] restarting camera, attempt', freezeRestartCount)
+              stop()
+              await initDetector()
+              await start()
+            } catch (e: any) {
+              emit('error', {
+                type: 'CAMERA_RESTART_FAILED',
+                message: 'Gagal me-restart kamera setelah freeze.',
+                cause: e
+              })
+              clearFreezeWatchdog()
+            }
+          })()
+        } else {
+          // masih sehat, update posisi terakhir time video
+          lastVideoTime = vTime
+        }
+      }, 1000)
+    }
+
     async function loop() {
       if (!video.value) return
+
+      lastLoopTs = performance.now()
       try {
         let results = await readFrame()
 

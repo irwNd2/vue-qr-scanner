@@ -6,15 +6,15 @@
 
 ## ✨ Features
 
-- 🚀 **Vue 3 Component** — drop straight into your Vite/Nuxt projects.
-- 🖼️ **Overlay ROI** (Region of Interest) with dark mask outside the scan area.
-- 🔲 **Border styles**: full box or corner/bracket style (like native scanner apps).
-- 🔄 **Auto fallback** from [BarcodeDetector API](https://developer.mozilla.org/en-US/docs/Web/API/BarcodeDetector) to [ZXing WASM](https://github.com/zxing-js/wasm).
-- 💡 **Torch & Camera Switch** controls exposed via slot.
-- 📐 **Square / Rectangle ROI** with adjustable aspect ratio.
-- 🛡️ **ROI filtering** (only emit detections inside the ROI).
-- 🖥️ **Custom video size** (`videoWidth` & `videoHeight`).
-- ⚡ **Debug mode** for engine logs and detection streaks.
+-  **Vue 3 Component** — drop straight into your Vite/Nuxt projects.
+-  **Overlay ROI** (Region of Interest) with dark mask outside the scan area.
+-  **Border styles**: full box or corner/bracket style (like native scanner apps).
+-  **Auto fallback** from [BarcodeDetector API](https://developer.mozilla.org/en-US/docs/Web/API/BarcodeDetector) to [ZXing WASM](https://github.com/zxing-js/wasm).
+-  **Torch & Camera Switch** controls exposed via slot.
+-  **Square / Rectangle ROI** with adjustable aspect ratio.
+-  **ROI filtering** (only emit detections inside the ROI).
+-  **Custom video size** (`videoWidth` & `videoHeight`).
+-  **Debug mode** for engine logs and detection streaks.
 
 ---
 
@@ -63,10 +63,10 @@ or
              @detect="onDetect">
     <div class="controls">
       <button @click="toggleTorch">
-        🔦 Torch: {{ state.torch ? 'ON' : 'OFF' }}
+         Torch: {{ state.torch ? 'ON' : 'OFF' }}
       </button>
       <button @click="switchCamera">
-        🔄 Switch to {{ state.usingBack ? 'Front' : 'Back' }} Camera
+         Switch to {{ state.usingBack ? 'Front' : 'Back' }} Camera
       </button>
     </div>
   </QrScanner>
