@@ -382,8 +382,8 @@ export default defineComponent({
       state.running = true
       const videoConstraints: MediaTrackConstraints = {
         facingMode: state.usingBack ? 'environment' : 'user',
-        // width:  { ideal: 1280 },
-        // height: { ideal: 720 },
+        width:  { ideal: 1280, max: 1280 },
+        height: { ideal: 720, max: 1280 },
         // advanced: [{ focusMode: 'continuous' as any }]
       }
       stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false })
